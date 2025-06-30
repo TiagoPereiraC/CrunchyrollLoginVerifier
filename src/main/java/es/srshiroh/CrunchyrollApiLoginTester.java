@@ -6,10 +6,6 @@ import java.util.List;
 // import java.util.Map;
 
 public class CrunchyrollApiLoginTester {
-
-    // Mantenemos la ruta al archivo de credenciales
-    private static final String CREDENTIALS_FILE_PATH = "C:\\Users\\Shiroh\\Documents\\try.txt";
-
     // Constructor. Ya no necesita inicializar HttpClient, ObjectMapper, etc.
     public CrunchyrollApiLoginTester() {
         System.out.println("CrunchyrollApiLoginTester inicializado para usar SeleniumLoginService.");
