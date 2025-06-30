@@ -16,7 +16,9 @@ public class CrunchyrollApiLoginTester {
     private static final String USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
 
     // Lista de client_ids conocidos para probar (basado en investigación de comunidad)
+    // Se añade el client_id más reciente obtenido manualmente al principio de la lista.
     private static final String[] KNOWN_CLIENT_IDS = {
+            "Y2V1b2l0Z2t2ZnZ0Z2RpcGtvd2VqZm9rcA==", // Client ID más reciente (ejemplo)
             "cr_web",                    // Web client clásico
             "noaihdevm_6iyg0a8l0q",    // Posible mobile client
             "crunchyroll_web",          // Variante web
