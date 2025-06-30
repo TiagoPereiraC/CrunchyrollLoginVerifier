@@ -1,5 +1,8 @@
 package es.srshiroh;
 
+import java.util.Map;
+import java.util.Collections;
+
 public class AuthenticationResult {
     private final String email;
     private final boolean success;
