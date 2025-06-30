@@ -6,6 +6,10 @@ import java.util.List;
 // import java.util.Map;
 
 public class CrunchyrollApiLoginTester {
+
+    // Mantenemos la ruta al archivo de credenciales
+    private static final String CREDENTIALS_FILE_PATH = "C:\\Users\\Shiroh\\Documents\\try.txt";
+
     // Constructor. Ya no necesita inicializar HttpClient, ObjectMapper, etc.
     public CrunchyrollApiLoginTester() {
         System.out.println("CrunchyrollApiLoginTester inicializado para usar SeleniumLoginService.");
@@ -62,7 +66,7 @@ public class CrunchyrollApiLoginTester {
                         });
                         */
                     } else if (result.getAccessToken() != null) {
-                         System.out.println("🔑 Access Token extraído (parcial): " + result.getAccessToken().substring(0, Math.min(result.getAccessToken().length(),15)) + "...");
+                        System.out.println("🔑 Access Token extraído (parcial): " + result.getAccessToken().substring(0, Math.min(result.getAccessToken().length(),15)) + "...");
                     }
                     else {
                         System.out.println("ℹ️ Login exitoso, pero no se extrajeron cookies ni tokens explícitamente (o el método no lo implementó).");
@@ -112,6 +116,4 @@ public class CrunchyrollApiLoginTester {
         }
         System.out.println("=".repeat(60));
     }
-
-    // Ya no se necesita printManualInstructions para client_id
 }
