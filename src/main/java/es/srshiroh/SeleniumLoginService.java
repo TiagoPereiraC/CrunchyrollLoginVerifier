@@ -2,58 +2,55 @@ package es.srshiroh;
 
 import io.github.bonigarcia.wdm.WebDriverManager;
 import org.openqa.selenium.WebDriver;
-import org.openqa.selenium.chrome.ChromeDriver;
-import org.openqa.selenium.chrome.ChromeOptions;
+import org.openqa.selenium.edge.EdgeDriver; // Cambio a EdgeDriver
+import org.openqa.selenium.edge.EdgeOptions; // Cambio a EdgeOptions
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebElement;
+import org.openqa.selenium.Cookie;
+import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
-import java.time.Duration; // Asegurarse de que java.time.Duration está importado
+import java.time.Duration;
+import java.util.Set;
 
 public class SeleniumLoginService implements AutoCloseable {
 
     private static final Logger logger = LoggerFactory.getLogger(SeleniumLoginService.class);
     private WebDriver driver;
 
-    private static final String LOGIN_URL = "https://www.crunchyroll.com/login";
-    // IDs hipotéticos de los elementos del formulario. ¡VERIFICAR ESTOS EN LA PÁGINA REAL!
-    private static final String EMAIL_INPUT_ID = "etp-email-input";
-    private static final String PASSWORD_INPUT_ID = "etp-password-input";
-    // Selector para el botón de login. Puede ser más específico.
-    // Intentaremos con un selector de botón de tipo submit dentro de un formulario que contenga los campos.
-    // O un selector más directo si se conoce, por ejemplo, por data-testid.
-    private static final String LOGIN_BUTTON_XPATH = "//form[.//input[@id='" + EMAIL_INPUT_ID + "']]//button[@type='submit']";
-    // Alternativa si el botón tiene un data-testid (más robusto si existe)
-    // private static final String LOGIN_BUTTON_DATA_TESTID = "login-button";
+    private static final String LOGIN_URL = "https://sso.crunchyroll.com/es/login";
+    // Nuevos selectores basados en la inspección del usuario
+    private static final String EMAIL_INPUT_NAME = "email";
+    private static final String PASSWORD_INPUT_NAME = "password";
+    // Usaremos data-t para el botón, es más robusto que el XPATH anterior que dependía de IDs inexistentes.
+    private static final String LOGIN_BUTTON_SELECTOR = "button[data-t='login-button']"; // Selector CSS
 
 
     public SeleniumLoginService(boolean headless) {
         try {
-            WebDriverManager.chromedriver().setup();
-            ChromeOptions options = new ChromeOptions();
+            WebDriverManager.edgedriver().setup(); // Cambio a edgedriver
+            EdgeOptions options = new EdgeOptions(); // Cambio a EdgeOptions
             if (headless) {
                 options.addArguments("--headless");
-                options.addArguments("--disable-gpu"); // Opcional, a veces necesario para headless en Windows
-                options.addArguments("--window-size=1920,1080"); // Opcional
+                options.addArguments("--disable-gpu");
+                options.addArguments("--window-size=1920,1080");
             }
-            // Añadir user-agent para parecer un navegador normal, podría ayudar a evitar detección
-            options.addArguments("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36");
+            // User agent actualizado para Edge (aunque el anterior podría funcionar, es mejor ser específico)
+            options.addArguments("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36 Edg/90.0.818.66");
 
-            // Deshabilitar "Chrome is being controlled by automated test software"
+            // Opciones para evitar detección como bot (generalmente funcionan para todos los basados en Chromium)
             options.setExperimentalOption("excludeSwitches", new String[]{"enable-automation"});
             options.setExperimentalOption("useAutomationExtension", false);
+            options.addArguments("--disable-blink-features=AutomationControlled");
 
-            // Otras opciones para intentar parecer menos un bot
-            options.addArguments("--disable-blink-features=AutomationControlled"); // Para versiones más nuevas de Chrome
-
-            this.driver = new ChromeDriver(options);
-            logger.info("ChromeDriver iniciado correctamente en modo {}.", headless ? "headless" : "normal");
+            this.driver = new EdgeDriver(options); // Cambio a EdgeDriver
+            logger.info("EdgeDriver iniciado correctamente en modo {}.", headless ? "headless" : "normal");
 
         } catch (Exception e) {
-            logger.error("Error al inicializar Selenium WebDriver: {}", e.getMessage(), e);
+            logger.error("Error al inicializar Selenium WebDriver (Edge): {}", e.getMessage(), e);
             throw new RuntimeException("No se pudo inicializar Selenium WebDriver", e);
         }
     }
@@ -68,37 +65,112 @@ public class SeleniumLoginService implements AutoCloseable {
             driver.get(LOGIN_URL);
             logger.debug("Navegado a la página de login: {}", LOGIN_URL);
 
-            WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(20)); // Aumentado a 20s
+            WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(20));
 
-            // Esperar y rellenar campo de email
-            logger.debug("Esperando por el campo de email (ID: {})...", EMAIL_INPUT_ID);
-            WebElement emailField = wait.until(ExpectedConditions.visibilityOfElementLocated(By.id(EMAIL_INPUT_ID)));
-            emailField.clear(); // Limpiar el campo por si acaso
+            // Esperar y rellenar campo de email usando el atributo name
+            logger.debug("Esperando por el campo de email (Name: {})...", EMAIL_INPUT_NAME);
+            WebElement emailField = wait.until(ExpectedConditions.visibilityOfElementLocated(By.name(EMAIL_INPUT_NAME)));
+            emailField.clear();
             emailField.sendKeys(email);
             logger.debug("Email ingresado.");
 
-            // Esperar y rellenar campo de contraseña
-            logger.debug("Esperando por el campo de contraseña (ID: {})...", PASSWORD_INPUT_ID);
-            WebElement passwordField = wait.until(ExpectedConditions.visibilityOfElementLocated(By.id(PASSWORD_INPUT_ID)));
+            // Esperar y rellenar campo de contraseña usando el atributo name
+            logger.debug("Esperando por el campo de contraseña (Name: {})...", PASSWORD_INPUT_NAME);
+            WebElement passwordField = wait.until(ExpectedConditions.visibilityOfElementLocated(By.name(PASSWORD_INPUT_NAME)));
             passwordField.clear();
             passwordField.sendKeys(password);
             logger.debug("Contraseña ingresada.");
 
-            // Pequeña pausa antes de hacer clic, a veces ayuda
+            // Pequeña pausa antes de hacer clic
             try { Thread.sleep(500); } catch (InterruptedException ignored) {}
 
-            // Esperar y hacer clic en el botón de login
-            logger.debug("Esperando por el botón de login (XPath: {})...", LOGIN_BUTTON_XPATH);
-            WebElement loginButton = wait.until(ExpectedConditions.elementToBeClickable(By.xpath(LOGIN_BUTTON_XPATH)));
-            // Alternativa con data-testid:
-            // WebElement loginButton = wait.until(ExpectedConditions.elementToBeClickable(By.xpath("//button[@data-testid='" + LOGIN_BUTTON_DATA_TESTID + "']")));
+            // Esperar y hacer clic en el botón de login usando el selector CSS para data-t
+            logger.debug("Esperando por el botón de login (Selector: {})...", LOGIN_BUTTON_SELECTOR);
+            WebElement loginButton = wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(LOGIN_BUTTON_SELECTOR)));
 
             loginButton.click();
             logger.info("Botón de login presionado para el email: {}", email);
 
-            // Aquí iría la lógica para detectar éxito/fallo y extraer tokens/cookies (Paso 3 del plan)
-            // Por ahora, devolvemos un resultado provisional.
-            return new AuthenticationResult(email, false, "Lógica de detección de éxito/fallo y extracción de tokens pendiente.");
+            // Esperar un momento para que la página procese el login
+            try { Thread.sleep(2000); } catch (InterruptedException ignored) {}
+
+            // Detectar si el login fue exitoso
+            String currentUrl = driver.getCurrentUrl();
+            logger.debug("URL actual después del login: {}", currentUrl);
+
+            // Verificar si hay errores de login
+            try {
+                // Buscar mensajes de error comunes
+                WebElement errorElement = driver.findElement(By.cssSelector("[data-t='error-message'], .error, .alert-danger, [class*='error']"));
+                if (errorElement.isDisplayed()) {
+                    String errorText = errorElement.getText();
+                    logger.warn("Error de login detectado: {}", errorText);
+                    return new AuthenticationResult(email, false, "Error de login: " + errorText);
+                }
+            } catch (Exception e) {
+                // No se encontró mensaje de error, continuar
+                logger.debug("No se encontraron mensajes de error visibles");
+            }
+
+            // Verificar si seguimos en la página de login (indicaría fallo)
+            if (currentUrl.contains("/login") || currentUrl.contains("login")) {
+                logger.warn("Aún en página de login, el login probablemente falló");
+                return new AuthenticationResult(email, false, "Login falló - aún en página de login");
+            }
+
+            // Verificar redirección exitosa (indicaría éxito)
+            if (currentUrl.contains("/home") || currentUrl.contains("/dashboard") ||
+                currentUrl.contains("/profile") || currentUrl.contains("crunchyroll.com") && !currentUrl.contains("/login")) {
+
+                logger.info("Login exitoso detectado - redirigido a: {}", currentUrl);
+
+                // Extraer cookies
+                Set<Cookie> seleniumCookies = driver.manage().getCookies();
+                logger.info("Cookies capturadas: {}", seleniumCookies.size());
+
+                // Intentar extraer tokens de localStorage o cookies
+                String accessToken = null;
+                String refreshToken = null;
+                String accountId = null;
+
+                try {
+                    // Buscar tokens en localStorage
+                    JavascriptExecutor js = (JavascriptExecutor) driver;
+                    accessToken = (String) js.executeScript("return localStorage.getItem('access_token') || localStorage.getItem('accessToken') || localStorage.getItem('etp_rt');");
+                    refreshToken = (String) js.executeScript("return localStorage.getItem('refresh_token') || localStorage.getItem('refreshToken');");
+                    accountId = (String) js.executeScript("return localStorage.getItem('account_id') || localStorage.getItem('accountId') || localStorage.getItem('user_id');");
+
+                    // Si no hay tokens en localStorage, buscar en cookies
+                    if (accessToken == null) {
+                        for (Cookie cookie : seleniumCookies) {
+                            if (cookie.getName().contains("etp_rt") || cookie.getName().contains("access_token")) {
+                                accessToken = cookie.getValue();
+                            }
+                            if (cookie.getName().contains("refresh_token")) {
+                                refreshToken = cookie.getValue();
+                            }
+                            if (cookie.getName().contains("account_id") || cookie.getName().contains("user_id")) {
+                                accountId = cookie.getValue();
+                            }
+                        }
+                    }
+
+                    logger.info("Tokens extraídos - Access Token: {}, Refresh Token: {}, Account ID: {}",
+                               accessToken != null ? "✓" : "✗",
+                               refreshToken != null ? "✓" : "✗",
+                               accountId != null ? "✓" : "✗");
+
+                } catch (Exception e) {
+                    logger.warn("Error extrayendo tokens: {}", e.getMessage());
+                }
+
+                return new AuthenticationResult(email, true, accessToken, refreshToken, accountId, currentUrl, seleniumCookies);
+            }
+
+            // Si llegamos aquí, no pudimos determinar claramente el estado
+            logger.warn("Estado de login incierto para {}, URL: {}", email, currentUrl);
+            Set<Cookie> seleniumCookies = driver.manage().getCookies();
+            return new AuthenticationResult(email, false, "Estado de login incierto - URL: " + currentUrl);
 
         } catch (org.openqa.selenium.TimeoutException e) {
             logger.error("Timeout esperando elementos en la página de login para {}: {}", email, e.getMessage());

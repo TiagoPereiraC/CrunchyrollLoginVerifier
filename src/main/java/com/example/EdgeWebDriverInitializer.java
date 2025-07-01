@@ -4,7 +4,7 @@ import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.edge.EdgeDriver;
 import org.openqa.selenium.edge.EdgeOptions;
 
-public class BraveWebDriverInitializer { // TODO: Rename class to EdgeWebDriverInitializer
+public class EdgeWebDriverInitializer { // TODO: Rename class to EdgeWebDriverInitializer
 
     public static void main(String[] args) {
         // System.setProperty("webdriver.edge.driver", "RUTA_A_TU_MSEDGEDRIVER_EXE");
