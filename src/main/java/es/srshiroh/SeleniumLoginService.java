@@ -10,7 +10,6 @@ import org.openqa.selenium.Cookie;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
 import org.openqa.selenium.JavascriptExecutor;
-import org.openqa.selenium.Proxy;
 import java.time.Duration;
 import java.util.Set;
 import java.util.logging.Logger;
@@ -20,14 +19,8 @@ public class SeleniumLoginService implements AutoCloseable {
     private WebDriver driver;
     private static final String LOGIN_URL = "https://sso.crunchyroll.com/es/login";
     private static final Logger logger = Logger.getLogger(SeleniumLoginService.class.getName());
-    private ProxyManager.ProxyInfo currentProxy;
 
     public SeleniumLoginService(boolean headless) {
-        this(headless, null);
-    }
-
-    public SeleniumLoginService(boolean headless, ProxyManager.ProxyInfo proxy) {
-        this.currentProxy = proxy;
         try {
             WebDriverManager.edgedriver().setup();
             EdgeOptions options = new EdgeOptions();
@@ -39,15 +32,6 @@ public class SeleniumLoginService implements AutoCloseable {
                 logger.info("EdgeDriver OPTIMIZADO iniciado correctamente.");
             } else {
                 logger.info("EdgeDriver iniciado correctamente en modo headless.");
-            }
-
-            // Configurar proxy si está disponible
-            if (proxy != null) {
-                Proxy seleniumProxy = new Proxy();
-                seleniumProxy.setHttpProxy(proxy.getHost() + ":" + proxy.getPort());
-                seleniumProxy.setSslProxy(proxy.getHost() + ":" + proxy.getPort());
-                options.setProxy(seleniumProxy);
-                logger.info("Usando proxy: " + proxy.toString());
             }
 
             options.addArguments("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0");
@@ -299,10 +283,6 @@ public class SeleniumLoginService implements AutoCloseable {
         } catch (Exception e) {
             logger.warning("Error extrayendo tokens: " + e.getMessage());
         }
-    }
-
-    public ProxyManager.ProxyInfo getCurrentProxy() {
-        return currentProxy;
     }
 
     @Override

