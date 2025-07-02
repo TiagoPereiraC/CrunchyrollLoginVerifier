@@ -2,183 +2,307 @@ package es.srshiroh;
 
 import io.github.bonigarcia.wdm.WebDriverManager;
 import org.openqa.selenium.WebDriver;
-import org.openqa.selenium.edge.EdgeDriver; // Cambio a EdgeDriver
-import org.openqa.selenium.edge.EdgeOptions; // Cambio a EdgeOptions
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
+import org.openqa.selenium.edge.EdgeDriver;
+import org.openqa.selenium.edge.EdgeOptions;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.Cookie;
-import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
+import org.openqa.selenium.JavascriptExecutor;
+import org.openqa.selenium.Proxy;
 import java.time.Duration;
 import java.util.Set;
+import java.util.logging.Logger;
 
 public class SeleniumLoginService implements AutoCloseable {
 
-    private static final Logger logger = LoggerFactory.getLogger(SeleniumLoginService.class);
     private WebDriver driver;
-
     private static final String LOGIN_URL = "https://sso.crunchyroll.com/es/login";
-    // Nuevos selectores basados en la inspección del usuario
-    private static final String EMAIL_INPUT_NAME = "email";
-    private static final String PASSWORD_INPUT_NAME = "password";
-    // Usaremos data-t para el botón, es más robusto que el XPATH anterior que dependía de IDs inexistentes.
-    private static final String LOGIN_BUTTON_SELECTOR = "button[data-t='login-button']"; // Selector CSS
-
+    private static final Logger logger = Logger.getLogger(SeleniumLoginService.class.getName());
+    private ProxyManager.ProxyInfo currentProxy;
 
     public SeleniumLoginService(boolean headless) {
+        this(headless, null);
+    }
+
+    public SeleniumLoginService(boolean headless, ProxyManager.ProxyInfo proxy) {
+        this.currentProxy = proxy;
         try {
-            WebDriverManager.edgedriver().setup(); // Cambio a edgedriver
-            EdgeOptions options = new EdgeOptions(); // Cambio a EdgeOptions
+            WebDriverManager.edgedriver().setup();
+            EdgeOptions options = new EdgeOptions();
+
             if (headless) {
                 options.addArguments("--headless");
                 options.addArguments("--disable-gpu");
                 options.addArguments("--window-size=1920,1080");
+                logger.info("EdgeDriver OPTIMIZADO iniciado correctamente.");
+            } else {
+                logger.info("EdgeDriver iniciado correctamente en modo headless.");
             }
-            // User agent actualizado para Edge (aunque el anterior podría funcionar, es mejor ser específico)
-            options.addArguments("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36 Edg/90.0.818.66");
 
-            // Opciones para evitar detección como bot (generalmente funcionan para todos los basados en Chromium)
+            // Configurar proxy si está disponible
+            if (proxy != null) {
+                Proxy seleniumProxy = new Proxy();
+                seleniumProxy.setHttpProxy(proxy.getHost() + ":" + proxy.getPort());
+                seleniumProxy.setSslProxy(proxy.getHost() + ":" + proxy.getPort());
+                options.setProxy(seleniumProxy);
+                logger.info("Usando proxy: " + proxy.toString());
+            }
+
+            options.addArguments("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0");
             options.setExperimentalOption("excludeSwitches", new String[]{"enable-automation"});
             options.setExperimentalOption("useAutomationExtension", false);
             options.addArguments("--disable-blink-features=AutomationControlled");
 
-            this.driver = new EdgeDriver(options); // Cambio a EdgeDriver
-            logger.info("EdgeDriver iniciado correctamente en modo {}.", headless ? "headless" : "normal");
-
+            this.driver = new EdgeDriver(options);
         } catch (Exception e) {
-            logger.error("Error al inicializar Selenium WebDriver (Edge): {}", e.getMessage(), e);
-            throw new RuntimeException("No se pudo inicializar Selenium WebDriver", e);
+            throw new RuntimeException("No se pudo inicializar WebDriver", e);
         }
-    }
-
-    public WebDriver getDriver() {
-        return driver;
     }
 
     public AuthenticationResult performLogin(String email, String password) {
-        logger.info("Iniciando proceso de login para el email: {}", email);
         try {
-            driver.get(LOGIN_URL);
-            logger.debug("Navegado a la página de login: {}", LOGIN_URL);
+            logger.info("Iniciando proceso de login OPTIMIZADO para: " + email);
 
+            driver.get(LOGIN_URL);
             WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(20));
 
-            // Esperar y rellenar campo de email usando el atributo name
-            logger.debug("Esperando por el campo de email (Name: {})...", EMAIL_INPUT_NAME);
-            WebElement emailField = wait.until(ExpectedConditions.visibilityOfElementLocated(By.name(EMAIL_INPUT_NAME)));
+            // Verificar si hay límite de solicitudes antes de continuar
+            if (hasRateLimitError()) {
+                String rateLimitMsg = getRateLimitMessage();
+                logger.warning("Límite de solicitudes detectado para " + email + ": " + rateLimitMsg);
+                return new AuthenticationResult(email, false, "RATE_LIMIT: " + rateLimitMsg);
+            }
+
+            WebElement emailField = wait.until(ExpectedConditions.visibilityOfElementLocated(By.name("email")));
             emailField.clear();
+            Thread.sleep(200);
             emailField.sendKeys(email);
-            logger.debug("Email ingresado.");
+            Thread.sleep(500);
 
-            // Esperar y rellenar campo de contraseña usando el atributo name
-            logger.debug("Esperando por el campo de contraseña (Name: {})...", PASSWORD_INPUT_NAME);
-            WebElement passwordField = wait.until(ExpectedConditions.visibilityOfElementLocated(By.name(PASSWORD_INPUT_NAME)));
+            WebElement passwordField = wait.until(ExpectedConditions.visibilityOfElementLocated(By.name("password")));
             passwordField.clear();
+            Thread.sleep(200);
             passwordField.sendKeys(password);
-            logger.debug("Contraseña ingresada.");
+            Thread.sleep(1000);
 
-            // Pequeña pausa antes de hacer clic
-            try { Thread.sleep(500); } catch (InterruptedException ignored) {}
+            WebElement loginButton = wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector("button[data-t='login-button']:not([aria-disabled='true'])")));
 
-            // Esperar y hacer clic en el botón de login usando el selector CSS para data-t
-            logger.debug("Esperando por el botón de login (Selector: {})...", LOGIN_BUTTON_SELECTOR);
-            WebElement loginButton = wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(LOGIN_BUTTON_SELECTOR)));
+            ((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView(true);", loginButton);
+            Thread.sleep(300);
 
-            loginButton.click();
-            logger.info("Botón de login presionado para el email: {}", email);
-
-            // Esperar un momento para que la página procese el login
-            try { Thread.sleep(2000); } catch (InterruptedException ignored) {}
-
-            // Detectar si el login fue exitoso
-            String currentUrl = driver.getCurrentUrl();
-            logger.debug("URL actual después del login: {}", currentUrl);
-
-            // Verificar si hay errores de login
             try {
-                // Buscar mensajes de error comunes
-                WebElement errorElement = driver.findElement(By.cssSelector("[data-t='error-message'], .error, .alert-danger, [class*='error']"));
-                if (errorElement.isDisplayed()) {
-                    String errorText = errorElement.getText();
-                    logger.warn("Error de login detectado: {}", errorText);
-                    return new AuthenticationResult(email, false, "Error de login: " + errorText);
-                }
+                loginButton.click();
+                logger.info("Botón de login presionado para el email: " + email);
             } catch (Exception e) {
-                // No se encontró mensaje de error, continuar
-                logger.debug("No se encontraron mensajes de error visibles");
+                ((JavascriptExecutor) driver).executeScript("arguments[0].click();", loginButton);
+                logger.info("Botón de login presionado para el email: " + email);
             }
 
-            // Verificar si seguimos en la página de login (indicaría fallo)
-            if (currentUrl.contains("/login") || currentUrl.contains("login")) {
-                logger.warn("Aún en página de login, el login probablemente falló");
-                return new AuthenticationResult(email, false, "Login falló - aún en página de login");
+            Thread.sleep(4000);
+
+            String currentUrl = driver.getCurrentUrl();
+
+            // Verificar límite de solicitudes después del login
+            if (hasRateLimitError()) {
+                String rateLimitMsg = getRateLimitMessage();
+                logger.warning("Límite de solicitudes detectado después del login para " + email + ": " + rateLimitMsg);
+                return new AuthenticationResult(email, false, "RATE_LIMIT: " + rateLimitMsg);
             }
 
-            // Verificar redirección exitosa (indicaría éxito)
-            if (currentUrl.contains("/home") || currentUrl.contains("/dashboard") ||
-                currentUrl.contains("/profile") || currentUrl.contains("crunchyroll.com") && !currentUrl.contains("/login")) {
-
-                logger.info("Login exitoso detectado - redirigido a: {}", currentUrl);
-
-                // Extraer cookies
-                Set<Cookie> seleniumCookies = driver.manage().getCookies();
-                logger.info("Cookies capturadas: {}", seleniumCookies.size());
-
-                // Intentar extraer tokens de localStorage o cookies
-                String accessToken = null;
-                String refreshToken = null;
-                String accountId = null;
-
-                try {
-                    // Buscar tokens en localStorage
-                    JavascriptExecutor js = (JavascriptExecutor) driver;
-                    accessToken = (String) js.executeScript("return localStorage.getItem('access_token') || localStorage.getItem('accessToken') || localStorage.getItem('etp_rt');");
-                    refreshToken = (String) js.executeScript("return localStorage.getItem('refresh_token') || localStorage.getItem('refreshToken');");
-                    accountId = (String) js.executeScript("return localStorage.getItem('account_id') || localStorage.getItem('accountId') || localStorage.getItem('user_id');");
-
-                    // Si no hay tokens en localStorage, buscar en cookies
-                    if (accessToken == null) {
-                        for (Cookie cookie : seleniumCookies) {
-                            if (cookie.getName().contains("etp_rt") || cookie.getName().contains("access_token")) {
-                                accessToken = cookie.getValue();
-                            }
-                            if (cookie.getName().contains("refresh_token")) {
-                                refreshToken = cookie.getValue();
-                            }
-                            if (cookie.getName().contains("account_id") || cookie.getName().contains("user_id")) {
-                                accountId = cookie.getValue();
-                            }
-                        }
-                    }
-
-                    logger.info("Tokens extraídos - Access Token: {}, Refresh Token: {}, Account ID: {}",
-                               accessToken != null ? "✓" : "✗",
-                               refreshToken != null ? "✓" : "✗",
-                               accountId != null ? "✓" : "✗");
-
-                } catch (Exception e) {
-                    logger.warn("Error extrayendo tokens: {}", e.getMessage());
+            if (hasLoginError()) {
+                String errorMsg = getLoginErrorMessage();
+                if (errorMsg.toLowerCase().contains("incorrect") || errorMsg.toLowerCase().contains("wrong") ||
+                    errorMsg.toLowerCase().contains("invalid") || errorMsg.toLowerCase().contains("incorrecto")) {
+                    return new AuthenticationResult(email, false, "contraseña incorrecta");
                 }
-
-                return new AuthenticationResult(email, true, accessToken, refreshToken, accountId, currentUrl, seleniumCookies);
+                return new AuthenticationResult(email, false, errorMsg);
             }
 
-            // Si llegamos aquí, no pudimos determinar claramente el estado
-            logger.warn("Estado de login incierto para {}, URL: {}", email, currentUrl);
-            Set<Cookie> seleniumCookies = driver.manage().getCookies();
-            return new AuthenticationResult(email, false, "Estado de login incierto - URL: " + currentUrl);
+            if (currentUrl.contains("/login") && currentUrl.contains("sso.crunchyroll.com")) {
+                logger.warning("Aún en página de login, el login probablemente falló");
+                return new AuthenticationResult(email, false, "permanece en página de login");
+            }
+
+            if (isSuccessfulRedirect(currentUrl)) {
+                logger.info("Login exitoso detectado - redirigido a: " + currentUrl);
+                Set<Cookie> cookies = driver.manage().getCookies();
+                logger.info("Cookies capturadas: " + cookies.size());
+
+                // Extraer tokens si están disponibles
+                extractTokens();
+
+                return new AuthenticationResult(email, true, cookies);
+            }
+
+            Thread.sleep(3000);
+            currentUrl = driver.getCurrentUrl();
+
+            if (isSuccessfulRedirect(currentUrl)) {
+                logger.info("Login exitoso detectado - redirigido a: " + currentUrl);
+                Set<Cookie> cookies = driver.manage().getCookies();
+                logger.info("Cookies capturadas: " + cookies.size());
+
+                // Extraer tokens si están disponibles
+                extractTokens();
+
+                return new AuthenticationResult(email, true, cookies);
+            }
+
+            logger.warning("Aún en página de login, el login probablemente falló");
+            return new AuthenticationResult(email, false, "permanece en página de login");
 
         } catch (org.openqa.selenium.TimeoutException e) {
-            logger.error("Timeout esperando elementos en la página de login para {}: {}", email, e.getMessage());
-            return new AuthenticationResult(email, false, "Timeout esperando elementos en la página de login.");
+            return new AuthenticationResult(email, false, "Timeout - botón no se habilitó o campos no se llenaron");
         } catch (Exception e) {
-            logger.error("Error durante el proceso de login con Selenium para {}: {}", email, e.getMessage(), e);
-            return new AuthenticationResult(email, false, "Error inesperado durante login con Selenium: " + e.getMessage());
+            logger.severe("Error durante el proceso de login con Selenium para " + email + ": " + e.getMessage());
+            return new AuthenticationResult(email, false, "Error: " + e.getMessage());
         }
+    }
+
+    private boolean hasRateLimitError() {
+        try {
+            // Verificar mensajes de límite de solicitudes en la página
+            String pageSource = driver.getPageSource().toLowerCase();
+
+            // Patrones comunes de límite de solicitudes
+            if (pageSource.contains("too many requests") ||
+                pageSource.contains("rate limit") ||
+                pageSource.contains("limite de solicitudes") ||
+                pageSource.contains("demasiadas solicitudes") ||
+                pageSource.contains("temporarily blocked") ||
+                pageSource.contains("temporalmente bloqueado") ||
+                pageSource.contains("429") ||
+                pageSource.contains("please wait") ||
+                pageSource.contains("por favor espera") ||
+                pageSource.contains("try again later") ||
+                pageSource.contains("intenta más tarde")) {
+                return true;
+            }
+
+            // Verificar elementos específicos de error de límite
+            try {
+                WebElement rateLimitElement = driver.findElement(By.xpath(
+                    "//*[contains(text(), 'too many') or contains(text(), 'rate limit') or " +
+                    "contains(text(), 'demasiadas') or contains(text(), 'limite') or " +
+                    "contains(text(), 'blocked') or contains(text(), 'bloqueado')]"));
+                return rateLimitElement.isDisplayed();
+            } catch (Exception ignored) {}
+
+            // Verificar si el título contiene indicaciones de límite
+            String title = driver.getTitle().toLowerCase();
+            if (title.contains("rate limit") || title.contains("blocked") || title.contains("429")) {
+                return true;
+            }
+
+        } catch (Exception ignored) {}
+
+        return false;
+    }
+
+    private String getRateLimitMessage() {
+        try {
+            // Intentar obtener el mensaje específico del límite de solicitudes
+            String pageSource = driver.getPageSource().toLowerCase();
+
+            if (pageSource.contains("too many requests")) {
+                return "Demasiadas solicitudes - límite excedido";
+            }
+            if (pageSource.contains("rate limit")) {
+                return "Límite de velocidad excedido";
+            }
+            if (pageSource.contains("temporarily blocked")) {
+                return "Temporalmente bloqueado";
+            }
+            if (pageSource.contains("429")) {
+                return "Error 429 - Demasiadas solicitudes";
+            }
+
+            // Intentar obtener mensaje específico de elementos
+            try {
+                WebElement rateLimitElement = driver.findElement(By.xpath(
+                    "//*[contains(text(), 'too many') or contains(text(), 'rate limit') or " +
+                    "contains(text(), 'demasiadas') or contains(text(), 'limite') or " +
+                    "contains(text(), 'blocked') or contains(text(), 'bloqueado')]"));
+                return rateLimitElement.getText().trim();
+            } catch (Exception ignored) {}
+
+        } catch (Exception ignored) {}
+
+        return "Límite de solicitudes detectado";
+    }
+
+    private boolean hasLoginError() {
+        try {
+            WebElement errorElement = driver.findElement(By.cssSelector(
+                "[data-t='error-message'], .error, .alert-danger, [class*='error'], .message--error"));
+            return errorElement.isDisplayed() && !errorElement.getText().trim().isEmpty();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private String getLoginErrorMessage() {
+        try {
+            WebElement errorElement = driver.findElement(By.cssSelector(
+                "[data-t='error-message'], .error, .alert-danger, [class*='error'], .message--error"));
+            if (errorElement.isDisplayed()) {
+                return errorElement.getText().trim();
+            }
+        } catch (Exception ignored) {}
+
+        try {
+            String pageSource = driver.getPageSource().toLowerCase();
+            if (pageSource.contains("incorrect") || pageSource.contains("invalid") ||
+                pageSource.contains("wrong") || pageSource.contains("incorrecto")) {
+                return "contraseña incorrecta";
+            }
+        } catch (Exception ignored) {}
+
+        return "Error de login desconocido";
+    }
+
+    private boolean isSuccessfulRedirect(String url) {
+        if (url.contains("crunchyroll.com") && !url.contains("/login") && !url.contains("sso")) {
+            return true;
+        }
+
+        if (url.contains("cloudflare") || url.contains("cf-challenge") ||
+            url.contains("captcha") || url.contains("challenge")) {
+            return true;
+        }
+
+        try {
+            String pageSource = driver.getPageSource().toLowerCase();
+            return pageSource.contains("welcome") || pageSource.contains("dashboard") ||
+                   pageSource.contains("profile") || pageSource.contains("settings") ||
+                   pageSource.contains("bienvenido") || pageSource.contains("perfil");
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private void extractTokens() {
+        try {
+            // Intentar extraer tokens del localStorage o sessionStorage
+            JavascriptExecutor js = (JavascriptExecutor) driver;
+
+            String accessToken = (String) js.executeScript("return localStorage.getItem('access_token') || sessionStorage.getItem('access_token');");
+            String refreshToken = (String) js.executeScript("return localStorage.getItem('refresh_token') || sessionStorage.getItem('refresh_token');");
+            String accountId = (String) js.executeScript("return localStorage.getItem('account_id') || sessionStorage.getItem('account_id');");
+
+            logger.info("Tokens extraídos - Access Token: " + (accessToken != null ? "✓" : "✗") +
+                       ", Refresh Token: " + (refreshToken != null ? "✓" : "✗") +
+                       ", Account ID: " + (accountId != null ? "✓" : "✗"));
+
+        } catch (Exception e) {
+            logger.warning("Error extrayendo tokens: " + e.getMessage());
+        }
+    }
+
+    public ProxyManager.ProxyInfo getCurrentProxy() {
+        return currentProxy;
     }
 
     @Override
@@ -189,7 +313,7 @@ public class SeleniumLoginService implements AutoCloseable {
                 driver.quit();
                 logger.info("WebDriver cerrado.");
             } catch (Exception e) {
-                logger.error("Error al cerrar WebDriver: {}", e.getMessage(), e);
+                logger.warning("Error cerrando WebDriver: " + e.getMessage());
             }
         }
     }

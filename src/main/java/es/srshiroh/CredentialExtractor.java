@@ -9,10 +9,12 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class CredentialExtractor {
-
-    // Patrones para diferentes formatos de credenciales
     private static final Pattern EMAIL_PASSWORD_COLON = Pattern.compile(
             "([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,})\\s*:\\s*(.+)"
+    );
+
+    private static final Pattern URL_EMAIL_PASSWORD = Pattern.compile(
+            "https?://[^:]+:([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,})\\s*:\\s*(.+)"
     );
 
     private static final Pattern EMAIL_PASSWORD_SPACE = Pattern.compile(
@@ -52,11 +54,6 @@ public class CredentialExtractor {
     public static List<UserCredential> extractCredentials(String filePath) {
         List<UserCredential> credentials = new ArrayList<>();
         int lineNumber = 0;
-        int validCredentials = 0;
-        int invalidLines = 0;
-
-        System.out.println("📁 Leyendo archivo: " + filePath);
-        System.out.println("🔍 Buscando credenciales en múltiples formatos...\n");
 
         try (BufferedReader reader = new BufferedReader(new FileReader(filePath))) {
             String line;
@@ -65,7 +62,6 @@ public class CredentialExtractor {
                 lineNumber++;
                 line = line.trim();
 
-                // Saltar líneas vacías o comentarios
                 if (line.isEmpty() || line.startsWith("#") || line.startsWith("//")) {
                     continue;
                 }
@@ -73,13 +69,6 @@ public class CredentialExtractor {
                 UserCredential credential = parseLine(line, lineNumber);
                 if (credential != null) {
                     credentials.add(credential);
-                    validCredentials++;
-                    System.out.println("✅ Línea " + lineNumber + ": " + credential.getOriginalFormat() +
-                            " - " + credential.getEmail());
-                } else {
-                    invalidLines++;
-                    System.out.println("❌ Línea " + lineNumber + ": Formato no reconocido - " +
-                            (line.length() > 50 ? line.substring(0, 50) + "..." : line));
                 }
             }
 
@@ -88,35 +77,27 @@ public class CredentialExtractor {
             return credentials;
         }
 
-        // Mostrar resumen de extracción
-        System.out.println("\n" + "=".repeat(50));
-        System.out.println("RESUMEN DE EXTRACCIÓN DE CREDENCIALES");
-        System.out.println("=".repeat(50));
-        System.out.println("Total de líneas procesadas: " + lineNumber);
-        System.out.println("Credenciales válidas encontradas: " + validCredentials);
-        System.out.println("Líneas con formato inválido: " + invalidLines);
-        System.out.println("Líneas vacías/comentarios omitidas: " + (lineNumber - validCredentials - invalidLines));
-
-        if (validCredentials > 0) {
-            System.out.println("\nFORMATOS DETECTADOS:");
-            countFormats(credentials);
-        }
-
-        System.out.println("=".repeat(50) + "\n");
-
         return credentials;
     }
 
     private static UserCredential parseLine(String line, int lineNumber) {
-        // Formato 1: email:password (MÁS COMÚN)
-        Matcher matcher = EMAIL_PASSWORD_COLON.matcher(line);
+        // Formato 1: URL:email:password
+        Matcher matcher = URL_EMAIL_PASSWORD.matcher(line);
+        if (matcher.find()) {
+            String email = matcher.group(1);
+            String password = matcher.group(2);
+            return new UserCredential(email, password, "URL:email:password");
+        }
+
+        // Formato 2: email:password
+        matcher = EMAIL_PASSWORD_COLON.matcher(line);
         if (matcher.find()) {
             String email = matcher.group(1);
             String password = matcher.group(2);
             return new UserCredential(email, password, "email:password");
         }
 
-        // Formato 2: email|password
+        // Formato 3: email|password
         matcher = EMAIL_PASSWORD_PIPE.matcher(line);
         if (matcher.find()) {
             String email = matcher.group(1);
@@ -124,7 +105,7 @@ public class CredentialExtractor {
             return new UserCredential(email, password, "email|password");
         }
 
-        // Formato 3: email;password
+        // Formato 4: email;password
         matcher = EMAIL_PASSWORD_SEMICOLON.matcher(line);
         if (matcher.find()) {
             String email = matcher.group(1);
@@ -132,18 +113,17 @@ public class CredentialExtractor {
             return new UserCredential(email, password, "email;password");
         }
 
-        // Formato 4: email password (separado por espacios)
+        // Formato 5: email password
         matcher = EMAIL_PASSWORD_SPACE.matcher(line);
         if (matcher.find()) {
             String email = matcher.group(1);
             String password = matcher.group(2);
-            // Validar que la contraseña no contenga espacios (evitar falsos positivos)
             if (!password.contains(" ") && password.length() >= 3) {
                 return new UserCredential(email, password, "email password");
             }
         }
 
-        return null; // No se pudo parsear
+        return null;
     }
 
     private static void countFormats(List<UserCredential> credentials) {
